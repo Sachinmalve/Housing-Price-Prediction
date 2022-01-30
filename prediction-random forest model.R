@@ -1,36 +1,57 @@
-#GETTING DATA
-housing.df <- read.table("housing.data", header = FALSE, sep = "")
-names1 <- read.fwf("housing.names", skip = 30, n = 17,widths = c(-7,8,-60))
+melb_data <- read.csv("D:/Data Set/melb_data.csv")
+View(melb_data)
 
-#Extract the column names alone from the relevent lines, remove spaces
-names2 <- as.character(names1[-c(3,6,15),])
-names2 <- gsub(" ", "", names2)
-names(housing.df) <- names2
+summary (melb_data)
 
-#Exploratory data analysis
-any(is.na(housing.df))  #checking for null values
-summary(housing.df)
+names(melb_data)
 
-library(ggplot2)
-ggplot(housing.df,aes(x=MEDV)) + geom_histogram(bins = 20 , alpha = 0.5 ,fill ="blue") #since we're predicting MEDV
-
-
-#Split into train-test data
-library(caTools)
-set.seed(12345)
-sample <- sample.split(housing.df$MEDV,SplitRatio = 0.7)
-train <- subset(housing.df,sample == TRUE)
-test<-subset(housing.df,sample == FALSE)
-
-#Building the Model
+library(rpart)
 library(randomForest)
-model <- randomForest(formula = MEDV ~ ., data = train) #(MEDV was skewed to the right hence a log transformation would normalize the distribution of MEDV.)
-summary (model)
+library(tidyverse)
+fit <- rpart(Price ~ Rooms + Bathroom + Landsize + BuildingArea + YearBuilt + Lattitude + Longtitude,data = melb_data)  
 
-#Predict on test set
-pred.rf <- predict(model,test)
-rmse.rf <- sqrt(sum(((pred.rf) - test$MEDV)^2)/
-                  length(test$MEDV))
-c(RMSE = rmse.rf, pseudoR2 = mean(model$rsq))
+plot(fit,uniform=TRUE)
+text(fit,cex=0.6)
 
-plot(pred.rf,test$MEDV, xlab = "Predicted Price", ylab = "Actual Price", pch = 3)
+head(melb_data)
+
+predict(fit,head(melb_data))
+
+print (head(melb_data $ Price ))
+
+library(modelr)
+
+mae(model=fit , data =melb_data)
+
+splitData <- resample_partition(melb_data,c(test=0.3,train=0.7))
+
+sapply(splitData,dim)
+
+fit2 <- rpart(Price ~ Rooms + Bathroom + Landsize + BuildingArea + YearBuilt + Lattitude + Longtitude, data = splitData$train)
+
+mae(model=fit2 , data=melb_data)
+get_mae <- function(maxdepth, target, predictors, training_data, testing_data){
+  predictors <- paste(predictors, collapse="+")
+  formula <- as.formula(paste(target,"~",predictors,sep = ""))
+  model <- rpart(formula, data = training_data,
+                 control = rpart.control(maxdepth = maxdepth))
+  
+  mae <- mae(model, testing_data)
+  return(mae)
+}
+target <- "Price"
+predictors <-  c("Rooms","Bathroom","Landsize","BuildingArea",
+                 "YearBuilt","Lattitude","Longtitude")  
+for(i in 1:10){
+  mae <- get_mae(maxdepth = i, target = target, predictors = predictors,
+                 training_data = splitData$train, testing_data = splitData$test)
+  print(glue::glue("Maxdepth: ",i,"\t MAE: ",mae))
+}
+fit3 <- randomForest(Price ~ Rooms + Bathroom + Landsize + BuildingArea + YearBuilt + Lattitude
+                     + Longtitude, data = splitData$train,na.action = na.exclude)
+
+#Calculating the MAE after fitting a model using Random Forest 
+mae(model=fit3,data = splitData$test)
+
+predict(fit3, head(melb_data))
+print (head(melb_data $ Price ))
